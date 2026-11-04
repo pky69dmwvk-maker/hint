@@ -2,7 +2,16 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>추억 기록</title>
   <meta name="theme-color" content="#f5f5f3">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="추억 기록">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <script>
     // 배포한 Apps Script 웹 앱의 exec 주소를 아래 따옴표 안에 붙여 넣으세요.
     const API_URL = 'https://script.google.com/macros/s/AKfycbxvK41OmCtnYG9CmxdjV4CapVx_KU6GybElRIbNnPEj1jZpNPwEoGWwr6B0TlOVOoxr/exec';
@@ -198,6 +207,30 @@
     .tab.on { color: #111; font-weight: 700; }
     .tab.on .ico { background: var(--accent); }
     .bd { display: none; position: absolute; top: 2px; left: calc(50% + 8px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #e5383b; color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+
+    /* 모바일 보강 */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    body {
+      padding-left: max(16px, env(safe-area-inset-left));
+      padding-right: max(16px, env(safe-area-inset-right));
+      padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    }
+    button, .day, .tab, .stage, .inset, .wchip, .fbtn, .addBtn { touch-action: manipulation; }
+
+    /* 사진 불러오기: 작은 그림을 먼저 보여 주고, 원본이 오면 부드럽게 바뀐다 */
+    .ph { position: relative; }
+    .ph .phThumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(12px); transform: scale(1.08); }
+    .ph .phMsg { position: relative; z-index: 1; padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.85); color: var(--text); font-size: 13px; font-weight: 600; }
+    .ph.loading:not(.hasThumb) { background: linear-gradient(100deg, var(--raised) 30%, #fafaf8 50%, var(--raised) 70%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+    .ph img.full { position: absolute; inset: 0; z-index: 2; opacity: 0; transition: opacity 0.25s ease; }
+    .ph img.full.in { opacity: 1; }
+    .ph.err { flex-direction: column; }
+    .ph .retry { position: relative; z-index: 3; margin-top: 10px; min-height: 44px; padding: 0 18px; border: 0; border-radius: 999px; background: var(--accent); color: #111; font-size: 14px; font-weight: 700; }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      .ph.loading:not(.hasThumb) { animation: none; }
+      .ph img.full { transition: none; }
+    }
   </style>
 </head>
 <body>
@@ -387,7 +420,7 @@
     var state = {
       token: '', id: '', view: 'input',
       year: 0, month: 0, filter: '', selectedDate: '',
-      summary: null, entries: [], req: 0, photos: {}, sel: '',
+      summary: null, entries: [], req: 0, photos: {}, monthCache: {}, sel: '',
       who: '', friends: { friends: [], incoming: [], outgoing: [] }
     };
     var outerUrl = null;
@@ -535,8 +568,8 @@ var KR_WORLD_XY=[666,116];
       if (!API_URL) {
         return Promise.reject(new Error('API_URL이 비어 있어요. index.html 맨 위의 API_URL에 웹 앱 주소를 붙여 넣어 주세요.'));
       }
-      if (fn === 'listMonth') {
-        req = fetch(API_URL + '?' + query({ action: 'list', token: args[0], ym: args[1], region: args[2], who: args[3] }));
+      if (fn === 'listMonth' || fn === 'listBoth') {
+        req = fetch(API_URL + '?' + query({ action: 'list', token: args[0], ym: args[1], region: args[2], who: args[3], summary: (fn === 'listBoth' && args[4]) ? '1' : '' }));
       } else if (fn === 'getSummary') {
         req = fetch(API_URL + '?' + query({ action: 'list', token: args[0], who: args[1] }));
       } else {
@@ -561,13 +594,17 @@ var KR_WORLD_XY=[666,116];
             throw new Error(res && res.error ? res.error : '요청을 처리하지 못했어요.');
           }
           if (fn === 'listMonth') return res.data.entries;
+          if (fn === 'listBoth') return res.data;
           if (fn === 'getSummary') return res.data.summary;
           return res.data;
         });
     }
+    var ID_KEY = 'memory_id';
     function saveToken(t) { try { localStorage.setItem(TOKEN_KEY, t); } catch (e) {} }
     function loadToken() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } }
-    function clearToken() { try { localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
+    function saveId(i) { try { localStorage.setItem(ID_KEY, i); } catch (e) {} }
+    function loadId() { try { return localStorage.getItem(ID_KEY) || ''; } catch (e) { return ''; } }
+    function clearToken() { try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(ID_KEY); } catch (e) {} }
     function todayText() {
       var d = new Date();
       var days = ['일', '월', '화', '수', '목', '금', '토'];
@@ -611,6 +648,7 @@ var KR_WORLD_XY=[666,116];
       state.token = res.token;
       state.id = res.id;
       saveToken(res.token);
+      saveId(res.id);
       $('upw').value = '';
       $('viewLogin').style.display = 'none';
       $('app').style.display = 'block';
@@ -624,7 +662,8 @@ var KR_WORLD_XY=[666,116];
 
     function toLogin(msg) {
       clearToken();
-      state.token = ''; state.id = ''; state.summary = null; state.photos = {};
+      Object.keys(state.photos).forEach(function (k) { try { URL.revokeObjectURL(state.photos[k]); } catch (e) {} });
+      state.token = ''; state.id = ''; state.summary = null; state.photos = {}; state.monthCache = {};
       state.entries = []; state.filter = ''; state.selectedDate = ''; state.year = 0;
       state.who = ''; state.friends = { friends: [], incoming: [], outgoing: [] };
       autoRegion = '';
@@ -995,6 +1034,7 @@ var KR_WORLD_XY=[666,116];
           $('memo').value = '';
           $('cnt').textContent = '0';
           state.summary = null;
+          state.monthCache = {};
         })
         .catch(function (e) {
           setBusy(false);
@@ -1037,27 +1077,45 @@ var KR_WORLD_XY=[666,116];
         state.year = d.getFullYear();
         state.month = d.getMonth() + 1;
       }
-      ensureSummary()
-        .then(function () { fillFilter(); loadMonth(); })
-        .catch(function (e) {
-          handleFail(e, function (t) { $('calStatus').textContent = '불러오지 못했어요. ' + t; });
-        });
+      loadMonth();
     }
 
+    function entriesSig(list) {
+      return (list || []).map(function (e) { return [e.photo, e.region, e.memo, e.time].join('~'); }).join('|');
+    }
+
+    // 목록과 요약을 서버에 한 번만 묻는다. 이전에 본 달은 바로 보여 주고 뒤에서 새로 확인한다.
     function loadMonth() {
       $('monthTitle').textContent = state.year + '년 ' + state.month + '월';
-      $('calStatus').textContent = '불러오는 중...';
       var mine = ++state.req;
       var ym = state.year + '-' + pad2(state.month);
-      call('listMonth', [state.token, ym, state.filter, state.who])
-        .then(function (list) {
+      var key = [state.who, state.filter, ym].join('|');
+      var cached = state.monthCache[key];
+      if (cached) {
+        state.entries = cached;
+        renderCal();
+        renderDetail();
+      } else {
+        $('calStatus').textContent = '불러오는 중...';
+      }
+      call('listBoth', [state.token, ym, state.filter, state.who, !state.summary])
+        .then(function (res) {
           if (mine !== state.req) return;
-          state.entries = list;
+          if (res.summary) {
+            var before = state.filter;
+            state.summary = res.summary;
+            fillFilter();
+            if (state.filter !== before) { loadMonth(); return; }
+          }
+          state.monthCache[key] = res.entries;
+          if (cached && entriesSig(cached) === entriesSig(res.entries)) return;
+          state.entries = res.entries;
           renderCal();
           renderDetail();
         })
         .catch(function (e) {
           if (mine !== state.req) return;
+          if (cached && !sessionGone(e)) return;
           handleFail(e, function (t) { $('calStatus').textContent = '불러오지 못했어요. ' + t; });
         });
     }
@@ -1107,20 +1165,147 @@ var KR_WORLD_XY=[666,116];
         : (state.filter ? state.filter + ' 기록이 이 달에는 없어요.' : '이 달에는 기록이 없어요.');
     }
 
+    /* ---------- 사진 보관함: 한 번 본 사진은 이 기기에 저장해서 다음부터 바로 보여 준다 ---------- */
+    var PHOTO_KEEP = 300;
+    var PHOTO_PARALLEL = 2;
+    var photoDb = null;
+    var photoQueue = [];
+    var photoActive = 0;
+
+    function openPhotoDb() {
+      if (photoDb) return photoDb;
+      photoDb = new Promise(function (resolve) {
+        try {
+          var rq = indexedDB.open('memory_photos', 1);
+          rq.onupgradeneeded = function () {
+            var st = rq.result.createObjectStore('p');
+            st.createIndex('t', 't');
+          };
+          rq.onsuccess = function () { resolve(rq.result); };
+          rq.onerror = function () { resolve(null); };
+          rq.onblocked = function () { resolve(null); };
+        } catch (e) { resolve(null); }
+      });
+      return photoDb;
+    }
+
+    function dbGet(name) {
+      return openPhotoDb().then(function (db) {
+        if (!db) return null;
+        return new Promise(function (resolve) {
+          try {
+            var rq = db.transaction('p').objectStore('p').get(name);
+            rq.onsuccess = function () { resolve(rq.result && rq.result.blob ? rq.result.blob : null); };
+            rq.onerror = function () { resolve(null); };
+          } catch (e) { resolve(null); }
+        });
+      });
+    }
+
+    function dbPut(name, blob) {
+      return openPhotoDb().then(function (db) {
+        if (!db) return;
+        try {
+          var st = db.transaction('p', 'readwrite').objectStore('p');
+          st.put({ blob: blob, t: Date.now() }, name);
+          var cr = st.count();
+          cr.onsuccess = function () {
+            var extra = cr.result - PHOTO_KEEP;
+            if (extra <= 0) return;
+            var cur = st.index('t').openCursor();
+            cur.onsuccess = function () {
+              var c = cur.result;
+              if (!c || extra <= 0) return;
+              c.delete();
+              extra--;
+              c.continue();
+            };
+          };
+        } catch (e) {}
+      });
+    }
+
+    function dbClear() {
+      return openPhotoDb().then(function (db) {
+        if (!db) return;
+        try { db.transaction('p', 'readwrite').objectStore('p').clear(); } catch (e) {}
+      });
+    }
+
+    function fetchPhotoBlob(name, ph) {
+      return new Promise(function (resolve, reject) {
+        photoQueue.push({ name: name, ph: ph, resolve: resolve, reject: reject });
+        pumpPhotos();
+      });
+    }
+
+    // 한꺼번에 여러 장을 부르면 서버가 더 느려진다. 동시에 2장까지만 부른다.
+    function pumpPhotos() {
+      while (photoActive < PHOTO_PARALLEL && photoQueue.length) {
+        var job = photoQueue.shift();
+        if (job.ph && !document.body.contains(job.ph)) { job.reject(new Error('skip')); continue; }
+        photoActive++;
+        (function (j) {
+          call('getPhoto', [state.token, j.name])
+            .then(function (url) { return fetch(url).then(function (r) { return r.blob(); }); })
+            .then(j.resolve, j.reject)
+            .then(function () { photoActive--; pumpPhotos(); });
+        })(job);
+      }
+    }
+
     function putPhoto(ph, url) {
-      ph.textContent = '';
+      if (!ph.querySelector('.phThumb, .phMsg')) ph.textContent = '';
       var img = new Image();
-      img.src = url;
+      img.decoding = 'async';
       img.alt = '저장한 사진';
+      img.className = 'full';
+      img.onload = function () {
+        ph.className = 'ph';
+        Array.prototype.slice.call(ph.querySelectorAll('.phThumb, .phMsg')).forEach(function (n) { n.remove(); });
+        img.className = 'full in';
+      };
+      img.onerror = function () { showPhotoError(ph, '', null, '사진을 표시하지 못했어요.', true); };
+      img.src = url;
       ph.appendChild(img);
     }
 
-    function loadPhoto(name, ph) {
+    function showPhotoError(ph, name, thumb, text, noRetry) {
+      ph.className = 'ph err';
+      ph.textContent = '';
+      ph.appendChild(el('div', '', text || '사진을 불러오지 못했어요.'));
+      if (noRetry || !name) return;
+      var b = el('button', 'retry', '다시 시도');
+      b.type = 'button';
+      b.addEventListener('click', function () { loadPhoto(name, ph, thumb); });
+      ph.appendChild(b);
+    }
+
+    function loadPhoto(name, ph, thumb) {
       if (state.photos[name]) { putPhoto(ph, state.photos[name]); return; }
-      call('getPhoto', [state.token, name])
-        .then(function (url) { state.photos[name] = url; putPhoto(ph, url); })
+      ph.className = 'ph loading' + (thumb ? ' hasThumb' : '');
+      ph.textContent = '';
+      if (thumb) {
+        var t = new Image();
+        t.className = 'phThumb';
+        t.alt = '';
+        t.src = 'data:image/jpeg;base64,' + thumb;
+        ph.appendChild(t);
+      }
+      ph.appendChild(el('span', 'phMsg', '사진 불러오는 중...'));
+      dbGet(name)
+        .then(function (blob) {
+          if (blob) return blob;
+          return fetchPhotoBlob(name, ph).then(function (b) { dbPut(name, b); return b; });
+        })
+        .then(function (blob) {
+          var url = URL.createObjectURL(blob);
+          state.photos[name] = url;
+          putPhoto(ph, url);
+        })
         .catch(function (e) {
-          handleFail(e, function (t) { ph.textContent = t; });
+          if (e && e.message === 'skip') return;
+          handleFail(e, function (t2) { showPhotoError(ph, name, thumb, t2); });
         });
     }
 
@@ -1146,7 +1331,7 @@ var KR_WORLD_XY=[666,116];
         wrap.appendChild(ph);
         if (e.memo) wrap.appendChild(el('div', 'memoText', e.memo));
         box.appendChild(wrap);
-        loadPhoto(e.photo, ph);
+        loadPhoto(e.photo, ph, e.thumb);
       });
       box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
@@ -1499,6 +1684,7 @@ var KR_WORLD_XY=[666,116];
     $('logout').addEventListener('click', function () {
       var t = state.token;
       call('logout', [t]).catch(function () {});
+      dbClear();
       toLogin('');
     });
 
@@ -1573,6 +1759,14 @@ var KR_WORLD_XY=[666,116];
     (function start() {
       var token = loadToken();
       if (!token) { toLogin(''); return; }
+      var savedId = loadId();
+      if (savedId) {
+        enterApp({ token: token, id: savedId });
+        call('checkSession', [token])
+          .then(function (id) { if (!id) toLogin('로그인이 끝났어요. 다시 로그인해 주세요.'); })
+          .catch(function () {});
+        return;
+      }
       call('checkSession', [token])
         .then(function (id) {
           if (id) enterApp({ token: token, id: id });
