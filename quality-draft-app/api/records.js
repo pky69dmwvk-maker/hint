@@ -4,7 +4,7 @@
 import { put, list } from "@vercel/blob";
 import SEED from "./_seed.js";
 
-const PATH = "quality-draft/records.json";
+const PATH = "quality-draft/records-v2.json"; // 시연 데이터 버전이 바뀌면 파일 이름을 바꿔 새로 시작
 const seed = () => JSON.parse(JSON.stringify(SEED));
 const hasStore = () => Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
@@ -22,6 +22,7 @@ function clean(r) {
   return {
     id: str(r.id, 40), type: str(r.type, 20), occurredAt: str(r.occurredAt, 40), fileName: str(r.fileName, 120),
     phenomenon: str(r.phenomenon, 300), measure: str(r.measure, 120),
+    dept: str(r.dept, 40), toEmail: str(r.toEmail, 200), mailedAt: r.mailedAt ? str(r.mailedAt, 40) : null,
     startedAt: r.startedAt ? str(r.startedAt, 40) : null, finishedAt: r.finishedAt ? str(r.finishedAt, 40) : null,
     cause: str(r.cause, 200), aiDraft: str(r.aiDraft, 3000), finalText: str(r.finalText, 3000),
     usedAi: r.usedAi === true ? true : r.usedAi === false ? false : null,

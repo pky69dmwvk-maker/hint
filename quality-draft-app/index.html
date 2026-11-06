@@ -88,7 +88,7 @@ input:disabled,select:disabled,textarea:disabled{opacity:.6}
 .pill.done{background:var(--ok-bg);color:var(--ok)} .pill.pending{background:var(--warn-bg);color:var(--warn)}
 .pill.yes{background:var(--brand-soft);color:var(--brand)} .pill.no{background:var(--bad-bg);color:var(--manual)}
 .tablewrap{overflow-x:auto}
-table{border-collapse:collapse;width:100%;min-width:760px;font-size:13.5px}
+table{border-collapse:collapse;width:100%;min-width:900px;font-size:13.5px}
 th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
 th{font-size:12.5px;color:var(--muted);font-weight:700;background:var(--bg)}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
@@ -99,6 +99,10 @@ tbody tr.flash{animation:fl 2.4s ease-out}
 pre.txt{white-space:pre-wrap;font-family:var(--font);margin:6px 0 0;background:var(--bg);border-radius:8px;padding:10px 12px;font-size:13.5px}
 .legend{display:flex;gap:14px;font-size:12.5px;color:var(--muted);margin-bottom:8px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:baseline}
+.mailbox{margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--bg)}
+.mailbox h3{font-size:14px;margin-bottom:10px}
+.mailbox .two{display:grid;gap:10px;grid-template-columns:minmax(0,1fr) minmax(0,2fr)}
+@media (max-width:700px){.mailbox .two{grid-template-columns:1fr}}
 .hidden{display:none!important}
 footer{margin-top:28px;font-size:12.5px;color:var(--muted)}
 </style>
@@ -152,7 +156,16 @@ footer{margin-top:28px;font-size:12.5px;color:var(--muted)}
         </div>
         <div class="field">
           <label for="fMeas">주요 측정값 (단위 포함)</label>
-          <input type="text" id="fMeas" maxlength="100" placeholder="예: 소음 68 dB(가상)">
+          <input type="text" id="fMeas" maxlength="100" placeholder="예: 소음 68 dB">
+        </div>
+        <div class="field">
+          <label for="fDept">담당 부서</label>
+          <select id="fDept"></select>
+        </div>
+        <div class="field">
+          <label for="fTo">받는 사람 메일</label>
+          <input type="text" id="fTo" maxlength="200" placeholder="name@company.com (여러 명은 쉼표로 구분)">
+          <div class="hint">부서를 고르면 주소가 채워지고, 직접 고칠 수 있습니다. 저장한 뒤 목록·요약 화면에서 메일을 보냅니다.</div>
         </div>
         <div class="row">
           <button class="btn" id="btnStart" type="button">작성 시작</button>
@@ -216,7 +229,7 @@ footer{margin-top:28px;font-size:12.5px;color:var(--muted)}
     </div>
     <div id="msgList" class="msg" role="status"></div>
     <div class="tablewrap"><table>
-      <thead><tr><th>번호</th><th>불량 유형</th><th>발생 시각</th><th>상태</th><th>AI 활용</th><th>작성 시작</th><th>작성 완료</th><th class="num">소요(분)</th></tr></thead>
+      <thead><tr><th>번호</th><th>불량 유형</th><th>발생 시각</th><th>상태</th><th>AI 활용</th><th>작성 시작</th><th>작성 완료</th><th class="num">소요(분)</th><th>메일</th></tr></thead>
       <tbody id="tbody"></tbody>
     </table></div>
     <div id="detail" class="hidden" style="margin-top:14px"></div>
@@ -232,6 +245,8 @@ footer{margin-top:28px;font-size:12.5px;color:var(--muted)}
 (function(){
 'use strict';
 const $=(s)=>document.querySelector(s);
+const DEPTS=[{n:'설비보전팀',e:'maintenance@example.com'},{n:'생산기술팀',e:'prodtech@example.com'},{n:'공정관리팀',e:'process@example.com'},{n:'품질보증팀',e:'qa@example.com'}];
+const SUGGEST={'소음 불량':'생산기술팀','진동 불량':'설비보전팀','치수 불량':'공정관리팀','외관 불량':'공정관리팀'};
 const SAMPLE_FILES=['검사001.csv','검사002.csv','검사003.xlsx','검사004.csv','검사005.xlsx'];
 const S={records:[],storage:'',view:'input',cur:null,file:null,charts:{},timer:null,selId:null,resetArm:false};
 
@@ -356,9 +371,20 @@ function fillPick(){
   pendings().forEach(r=>{const o=document.createElement('option');o.value=r.id;o.textContent=`${r.id} · ${r.type} · ${fmt(r.occurredAt)} (시연용)`;p.append(o)});
 }
 function nextId(){const n=S.records.map(r=>parseInt(String(r.id).replace(/\D/g,''),10)||0);return 'R-'+String(Math.max(0,...n)+1).padStart(3,'0')}
+function fillDept(sel){
+  sel.innerHTML='';
+  const o0=document.createElement('option');o0.value='';o0.textContent='선택';sel.append(o0);
+  DEPTS.forEach(d=>{const o=document.createElement('option');o.value=d.n;o.textContent=d.n;sel.append(o)});
+}
+function deptEmail(n){const d=DEPTS.find(x=>x.n===n);return d?d.e:''}
+function onDeptChange(){$('#fTo').value=deptEmail($('#fDept').value)}
+function suggestDept(){
+  const n=SUGGEST[$('#fType').value]||'';
+  $('#fDept').value=n;$('#fTo').value=deptEmail(n);
+}
 function applyPick(){
   const id=$('#pick').value;const r=S.records.find(x=>x.id===id);
-  $('#fType').value=r?r.type:'';$('#fTime').value=r?toInput(r.occurredAt):'';
+  $('#fType').value=r?r.type:'';$('#fTime').value=r?toInput(r.occurredAt):'';suggestDept();
   $('#fPhen').value=r?r.phenomenon:'';$('#fMeas').value=r?r.measure:'';
   $('#fText').value='';setFile(null);resetDraftUi();
   $('#btnSample').classList.toggle('hidden',!(r&&SAMPLE_FILES.includes(r.fileName)));
@@ -431,7 +457,7 @@ async function save(){
   if(!used){m.textContent='AI 초안을 활용했는지 선택하세요.';return}
   if(used==='yes'&&!S.cur.aiDraft){m.textContent='활용했다면 먼저 AI 초안을 만들어 주세요. 직접 작성했다면 "아니요"를 선택하세요.';return}
   const rec={id:S.cur.id,type:$('#fType').value,occurredAt:fromInput($('#fTime').value),fileName:S.cur.fileName,phenomenon:$('#fPhen').value.trim(),measure:$('#fMeas').value.trim(),
-    startedAt:S.cur.startedAt,finishedAt:nowIso(),cause:used==='yes'?S.cur.cause:'',aiDraft:used==='yes'?S.cur.aiDraft:'',finalText:text,usedAi:used==='yes',status:'done',source:'user'};
+    startedAt:S.cur.startedAt,finishedAt:nowIso(),cause:used==='yes'?S.cur.cause:'',aiDraft:used==='yes'?S.cur.aiDraft:'',finalText:text,usedAi:used==='yes',status:'done',source:'user',dept:$('#fDept').value,toEmail:$('#fTo').value.trim(),mailedAt:null};
   $('#btnSave').disabled=true;
   try{
     await persist(rec);
@@ -486,7 +512,8 @@ function paintTable(flashId){
       cell(r.status==='done'?pill('완료','done'):pill('작성 전','pending')),
       cell(r.usedAi===true?pill('예','yes'):r.usedAi===false?pill('아니요','no'):'-'),
       cell(r.startedAt?fmt(r.startedAt,true):'-'),cell(r.finishedAt?fmt(r.finishedAt,true):'-'),
-      cell(r.startedAt&&r.finishedAt?num1(minutes(r.startedAt,r.finishedAt)):'-','num'));
+      cell(r.startedAt&&r.finishedAt?num1(minutes(r.startedAt,r.finishedAt)):'-','num'),
+      cell(r.mailedAt?pill('작성함 '+fmt(r.mailedAt),'yes'):(r.dept?r.dept:'-')));
     tr.addEventListener('click',()=>{S.selId=r.id;paintTable();paintDetail()});
     tb.append(tr);
   });
@@ -500,13 +527,73 @@ function paintDetail(){
   add('불량 현상 / 주요 측정값',`${r.phenomenon||'-'} / ${r.measure||'-'}`);
   add('AI 원인 후보',r.cause);add('AI 초안',r.aiDraft);add('엔지니어 수정 내용',r.finalText);
   if(r.status!=='done')add('상태','아직 작성 전입니다. 입력 화면에서 이 요청을 골라 작성을 시작하세요.');
+  else d.append(mailBox(r));
 }
+const EMAIL_RE=/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+function parseTo(v){return String(v||'').split(/[,;]/).map(x=>x.trim()).filter(Boolean)}
+function mailParts(r){
+  const first=String(r.finalText||'').split('\n')[0].trim();
+  const m=first.match(/^\[(.+)\]/);
+  const title=m?m[1]:`${r.type} 개선 요청`;
+  const subject=`[개선 요청] ${title} (${r.id})`;
+  const foot=`\n\n----\n요청번호: ${r.id}\n불량 유형: ${r.type}\n발생 시각: ${fmt(r.occurredAt,false,true)}`;
+  return{subject,full:String(r.finalText||'')+foot,foot,text:String(r.finalText||'')};
+}
+function mailtoUrl(to,subject,text,foot){
+  const mk=(b)=>`mailto:${to.map(encodeURIComponent).join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(b)}`;
+  let body=text+foot,url=mk(body),cut=false;
+  while(url.length>1900&&text.length>20){text=text.slice(0,Math.floor(text.length*0.9));body=text+'\n(…이하 생략, 전체 내용은 앱의 본문 복사로 확인)'+foot;url=mk(body);cut=true}
+  return{url,cut};
+}
+function mailBox(r){
+  const box=document.createElement('div');box.className='mailbox';
+  const h=document.createElement('h3');h.textContent='담당 부서에 메일 보내기';box.append(h);
+  const two=document.createElement('div');two.className='two';
+  const f1=document.createElement('div');const l1=document.createElement('label');l1.textContent='담당 부서';l1.htmlFor='mDept';
+  const sel=document.createElement('select');sel.id='mDept';fillDept(sel);sel.value=r.dept||'';f1.append(l1,sel);
+  const f2=document.createElement('div');const l2=document.createElement('label');l2.textContent='받는 사람 메일';l2.htmlFor='mTo';
+  const inp=document.createElement('input');inp.type='text';inp.id='mTo';inp.maxLength=200;inp.value=r.toEmail||deptEmail(r.dept);f2.append(l2,inp);
+  two.append(f1,f2);box.append(two);
+  sel.addEventListener('change',()=>{inp.value=deptEmail(sel.value)});
+  const row=document.createElement('div');row.className='row';row.style.marginTop='10px';
+  const send=document.createElement('button');send.className='btn';send.type='button';send.id='btnMail';send.textContent='메일 창 열기';
+  const copy=document.createElement('button');copy.className='btn sub';copy.type='button';copy.textContent='받는 사람·제목·본문 복사';
+  const msg=document.createElement('span');msg.className='msg';msg.setAttribute('role','status');msg.style.margin='0';
+  row.append(send,copy,msg);box.append(row);
+  const note=document.createElement('div');note.className='hint';
+  note.textContent=r.mailedAt?`메일 창을 연 시각: ${fmt(r.mailedAt,true,true)}. 실제 발송은 메일 앱에서 확인하세요.`:'버튼을 누르면 받는 사람, 제목, 본문이 채워진 메일 창이 열립니다. 보내기는 메일 앱에서 직접 누릅니다.';
+  box.append(note);
+  const check=()=>{
+    const to=parseTo(inp.value);
+    if(!to.length){msg.className='msg err';msg.textContent='받는 사람 메일을 입력하세요.';return null}
+    const bad=to.find(x=>!EMAIL_RE.test(x));
+    if(bad){msg.className='msg err';msg.textContent=`메일 주소 형식을 확인하세요: ${bad}`;return null}
+    return to;
+  };
+  send.addEventListener('click',()=>{
+    const to=check();if(!to)return;
+    const p=mailParts(r),u=mailtoUrl(to,p.subject,p.text,p.foot);
+    const a=document.createElement('a');a.href=u.url;a.style.display='none';document.body.append(a);a.click();a.remove();
+    msg.className='msg ok';msg.textContent=u.cut?'메일 창을 열었습니다. 본문이 길어 일부만 담겼으니 필요하면 본문 복사를 쓰세요.':'메일 창을 열었습니다. 메일 앱에서 확인 후 보내세요.';
+    const upd={...r,dept:sel.value,toEmail:inp.value.trim(),mailedAt:nowIso()};
+    persist(upd).then(()=>{S.selId=r.id;paintTable();note.textContent=`메일 창을 연 시각: ${fmt(upd.mailedAt,true,true)}. 실제 발송은 메일 앱에서 확인하세요.`}).catch(()=>{});
+  });
+  copy.addEventListener('click',async()=>{
+    const to=check();if(!to)return;
+    const p=mailParts(r);
+    const t=`받는 사람: ${to.join(', ')}\n제목: ${p.subject}\n\n${p.full}`;
+    try{await navigator.clipboard.writeText(t);msg.className='msg ok';msg.textContent='복사했습니다.'}
+    catch(e){const ta=document.createElement('textarea');ta.value=t;document.body.append(ta);ta.select();let ok=false;try{ok=document.execCommand('copy')}catch(_){}ta.remove();msg.className='msg '+(ok?'ok':'err');msg.textContent=ok?'복사했습니다.':'복사하지 못했습니다.'}
+  });
+  return box;
+}
+
 function paintList(flashId){const c=paintKpis();paintDurChart(c);paintTable(flashId);paintDetail()}
 function tsv(){
-  const head=['불량 유형','발생 시각','AI 원인 후보(자동 생성)','개선 요청서 초안(자동 생성)','엔지니어 수정 내용','AI 초안 활용 여부','작성 시작 시각(자동 생성)','작성 완료 시각(자동 생성)','작성 소요시간(분)'];
+  const head=['불량 유형','발생 시각','AI 원인 후보(자동 생성)','개선 요청서 초안(자동 생성)','엔지니어 수정 내용','AI 초안 활용 여부','작성 시작 시각(자동 생성)','작성 완료 시각(자동 생성)','작성 소요시간(분)','담당 부서','받는 사람','메일 창 연 시각'];
   const cl=(v)=>String(v??'').replace(/[\t\r]/g,' ').replace(/\n/g,' | ');
   const rows=S.records.map(r=>[r.type,fmt(r.occurredAt,false,true),r.cause,r.aiDraft,r.finalText,r.usedAi===true?'예':r.usedAi===false?'아니요':'',
-    r.startedAt?fmt(r.startedAt,true,true):'',r.finishedAt?fmt(r.finishedAt,true,true):'',r.startedAt&&r.finishedAt?num1(minutes(r.startedAt,r.finishedAt)):''].map(cl).join('\t'));
+    r.startedAt?fmt(r.startedAt,true,true):'',r.finishedAt?fmt(r.finishedAt,true,true):'',r.startedAt&&r.finishedAt?num1(minutes(r.startedAt,r.finishedAt)):'',r.dept||'',r.toEmail||'',r.mailedAt?fmt(r.mailedAt,true,true):''].map(cl).join('\t'));
   return [head.join('\t'),...rows].join('\n');
 }
 async function copyTsv(){
@@ -541,6 +628,8 @@ function showView(v,flashId){
 $('#tabInput').addEventListener('click',()=>showView('input'));
 $('#tabList').addEventListener('click',()=>showView('list'));
 $('#pick').addEventListener('change',applyPick);
+$('#fType').addEventListener('change',suggestDept);
+$('#fDept').addEventListener('change',onDeptChange);
 $('#btnStart').addEventListener('click',startWork);
 $('#btnCancel').addEventListener('click',cancelWork);
 $('#btnAi').addEventListener('click',makeAi);
@@ -556,7 +645,7 @@ $('#btnSample').addEventListener('click',async()=>{
   const r=S.records.find(x=>x.id===$('#pick').value);if(!r)return;
   try{setFile(await loadSample(r.fileName));$('#msgForm').textContent=''}catch(err){$('#msgForm').textContent=err.message}
 });
-loadRecords().then(()=>{fillPick();applyPick();lockForm(false);refreshSteps()});
+loadRecords().then(()=>{fillDept($('#fDept'));fillPick();applyPick();lockForm(false);refreshSteps()});
 })();
 </script>
 </body>
