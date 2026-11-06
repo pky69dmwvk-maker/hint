@@ -1,0 +1,9 @@
+{
+  "name": "quality-draft-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AI 기반 품질 분석 및 개선 요청서 초안 자동 생성 웹앱 (교육용 가상 데이터)",
+  "engines": { "node": "20.x" },
+  "dependencies": { "@vercel/blob": "2.8.2" }
+}
