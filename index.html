@@ -153,6 +153,17 @@
     .meta svg { color: var(--tint-ink); flex: none; }
     .ph { aspect-ratio: 4 / 5; border-radius: var(--radius-photo); background: var(--raised); color: var(--muted); font-size: 14px; display: flex; align-items: center; justify-content: center; overflow: hidden; text-align: center; padding: 8px; }
     .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .cmts { margin: 14px 2px 0; padding-top: 12px; border-top: 1px solid var(--raised); }
+    .cmt { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; font-size: 15px; line-height: 1.5; }
+    .cmt .body { flex: 1; min-width: 0; word-break: break-word; }
+    .cmt b { font-weight: 700; margin-right: 6px; }
+    .cmt .at { display: block; font-size: 12px; color: var(--faint); }
+    .cmt .del { flex: none; min-width: 36px; min-height: 36px; border: 0; background: none; color: var(--faint); font-size: 18px; line-height: 1; }
+    .cmtNote { font-size: 13px; color: var(--muted); padding: 4px 0; }
+    .cmtForm { display: flex; gap: 8px; margin-top: 8px; }
+    .cmtForm input[type=text] { flex: 1; min-width: 0; min-height: 44px; margin: 0; padding: 0 14px; }
+    .cmtForm button { flex: none; min-height: 44px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--accent); color: #111; font-size: 14px; font-weight: 700; }
+    .cmtForm button:disabled { opacity: .5; }
     .memoText { margin: 12px 2px 0; font-size: 16px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 
     /* 요약 */
@@ -420,7 +431,7 @@
     var state = {
       token: '', id: '', view: 'input',
       year: 0, month: 0, filter: '', selectedDate: '',
-      summary: null, entries: [], req: 0, photos: {}, monthCache: {}, sel: '',
+      summary: null, entries: [], req: 0, photos: {}, comments: {}, monthCache: {}, sel: '',
       who: '', friends: { friends: [], incoming: [], outgoing: [] }
     };
     var outerUrl = null;
@@ -579,7 +590,10 @@
       getFriends: ['token'],
       requestFriend: ['token', 'friendId'],
       respondFriend: ['token', 'fromId', 'accept'],
-      removeFriend: ['token', 'friendId']
+      removeFriend: ['token', 'friendId'],
+      getComments: ['token', 'names'],
+      addComment: ['token', 'name', 'text'],
+      deleteComment: ['token', 'name', 'cid']
     };
 
     function query(obj) {
@@ -697,7 +711,7 @@
     function toLogin(msg) {
       clearToken();
       Object.keys(state.photos).forEach(function (k) { try { URL.revokeObjectURL(state.photos[k]); } catch (e) {} });
-      state.token = ''; state.id = ''; state.summary = null; state.photos = {}; state.monthCache = {};
+      state.token = ''; state.id = ''; state.summary = null; state.photos = {}; state.comments = {}; state.monthCache = {};
       state.entries = []; state.filter = ''; state.selectedDate = ''; state.year = 0;
       state.who = ''; state.friends = { friends: [], incoming: [], outgoing: [] };
       autoRegion = '';
@@ -1388,6 +1402,91 @@
 
     var PIN_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
 
+    /* ---------- 댓글 ---------- */
+    var commentBoxes = {};
+
+    function photoOwner(name) { return String(name).replace(/_\d{8}_\d{6}\.jpg$/, ''); }
+
+    function commentBox(name) {
+      var box = el('div', 'cmts');
+      box.dataset.name = name;
+      commentBoxes[name] = box;
+      paintComments(name);
+      return box;
+    }
+
+    function paintComments(name) {
+      var box = commentBoxes[name];
+      if (!box) return;
+      box.textContent = '';
+      var list = state.comments[name];
+      if (!list) box.appendChild(el('div', 'cmtNote', '댓글 불러오는 중...'));
+      else list.forEach(function (c) {
+        var row = el('div', 'cmt');
+        var body = el('div', 'body');
+        body.appendChild(el('b', '', c.by));
+        body.appendChild(document.createTextNode(c.text));
+        body.appendChild(el('span', 'at', c.at));
+        row.appendChild(body);
+        if (c.by.toLowerCase() === state.id.toLowerCase() || photoOwner(name).toLowerCase() === state.id.toLowerCase()) {
+          var d = el('button', 'del', '×');
+          d.type = 'button';
+          d.setAttribute('aria-label', '댓글 지우기');
+          d.addEventListener('click', function () {
+            d.disabled = true;
+            call('deleteComment', [state.token, name, c.cid]).then(function () {
+              state.comments[name] = (state.comments[name] || []).filter(function (x) { return x.cid !== c.cid; });
+              paintComments(name);
+            }).catch(function (e) { d.disabled = false; handleFail(e, function (t) { showCmtError(box, t); }); });
+          });
+          row.appendChild(d);
+        }
+        box.appendChild(row);
+      });
+      var form = el('form', 'cmtForm');
+      var inp = el('input');
+      inp.type = 'text'; inp.maxLength = 200; inp.placeholder = '댓글 남기기'; inp.setAttribute('aria-label', '댓글');
+      var btn = el('button', '', '등록');
+      btn.type = 'submit';
+      form.appendChild(inp); form.appendChild(btn);
+      form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        var text = inp.value.trim();
+        if (!text) return;
+        btn.disabled = true; inp.disabled = true;
+        call('addComment', [state.token, name, text]).then(function (c) {
+          (state.comments[name] = state.comments[name] || []).push(c);
+          paintComments(name);
+        }).catch(function (e) {
+          btn.disabled = false; inp.disabled = false;
+          handleFail(e, function (t) { showCmtError(box, t); });
+        });
+      });
+      box.appendChild(form);
+    }
+
+    function showCmtError(box, text) {
+      var old = box.querySelector('.cmtErr');
+      if (old) old.remove();
+      var n = el('div', 'cmtNote cmtErr', text);
+      n.style.color = '#b00020';
+      box.insertBefore(n, box.querySelector('.cmtForm'));
+    }
+
+    function fetchComments(names) {
+      if (!names.length) return;
+      setTimeout(function () {
+        call('getComments', [state.token, names.slice(0, 12)]).then(function (res) {
+          names.forEach(function (n) { state.comments[n] = (res && res[n]) || []; paintComments(n); });
+        }).catch(function (e) {
+          names.forEach(function (n) {
+            if (!state.comments[n]) { state.comments[n] = []; paintComments(n); }
+          });
+          handleFail(e, function () {});
+        });
+      }, 700);
+    }
+
     function renderDetail() {
       var box = $('detail');
       box.innerHTML = '';
@@ -1407,9 +1506,11 @@
         var ph = el('div', 'ph', '사진 불러오는 중...');
         wrap.appendChild(ph);
         if (e.memo) wrap.appendChild(el('div', 'memoText', e.memo));
+        wrap.appendChild(commentBox(e.photo));
         box.appendChild(wrap);
         loadPhoto(e.photo, ph, e.thumb);
       });
+      fetchComments(items.map(function (e) { return e.photo; }));
       box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
